@@ -1,0 +1,80 @@
+services:
+  nginx:
+    build:
+      context: ../
+      dockerfile: .docker/nginx/Dockerfile
+    volumes:
+      - ..:/app
+    depends_on:
+      - web
+    ports:
+      - "80:80"
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ../
+      dockerfile: .docker/default/Dockerfile
+    command: >
+      sh -c "python web/manage.py makemigrations &&
+             python web/manage.py migrate &&
+             python web/manage.py collectstatic --noinput &&
+             python web/manage.py runserver 0.0.0.0:8000"
+    volumes:
+      - ..:/app
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  bot:
+    build:
+      context: ../
+      dockerfile: .docker/default/Dockerfile
+    command: python bot/main.py
+    volumes:
+      - ..:/app
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  celery_worker:
+    build:
+      context: ../
+      dockerfile: .docker/default/Dockerfile
+    command: celery -A web.core worker --loglevel=info --pool=solo
+    volumes:
+      - ..:/app
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  celery_beat:
+    build:
+      context: ../
+      dockerfile: .docker/default/Dockerfile
+    command: celery -A web.core beat --loglevel=info
+    volumes:
+      - ..:/app
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  redis:
+    image: redis
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
