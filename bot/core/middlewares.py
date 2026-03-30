@@ -12,13 +12,38 @@ class UserMiddleware(BaseMiddleware):
     ) -> Any:
         from_user = event.from_user
 
-        user, created = await User.objects.aget_or_create(id=from_user.id)
-        user.username = from_user.username
-        user.first_name = from_user.first_name
-        user.last_name = from_user.last_name
 
-        await user.asave()
+        user, created = await User.objects.aget_or_create(
+            id=from_user.id,
+            defaults={
+                'username': from_user.username,
+                'fio': from_user.full_name,
+                'role': ''
+            }
+        )
+
+        update_fields =[]
+        if user.username != from_user.username:
+            user.username = from_user.username
+            update_fields.append('username')
+        if not user.fio and from_user.full_name:
+            user.fio = from_user.full_name
+            update_fields.append('fio')
+
+        if update_fields:
+            await user.asave(update_fields=update_fields)
+
+        if not user.role:
+            text = (
+                "⏳ Вы добавлены в базу данных!\n\n"
+                "Ожидайте, пока администратор выдаст вам права (назначит роль "
+                "и выберет доступные группы). После этого вы сможете публиковать посты."
+            )
+            if isinstance(event, Message):
+                await event.answer(text)
+            elif isinstance(event, CallbackQuery):
+                await event.answer(text, show_alert=True)
+            return
 
         data['user'] = user
-
         return await handler(event, data)

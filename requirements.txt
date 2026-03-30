@@ -22,6 +22,7 @@ kombu==5.5.4
 magic-filter==1.0.12
 multidict==6.4.4
 packaging==25.0
+pillow==12.1.1
 prompt_toolkit==3.0.51
 propcache==0.3.1
 psycopg2-binary==2.9.10

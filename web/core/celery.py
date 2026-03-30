@@ -9,8 +9,8 @@ app.config_from_object('django.conf:settings', namespace='CELERY')
 app.autodiscover_tasks()
 
 app.conf.beat_schedule = {
-    'example': {
-        'task': 'web.panel.tasks.example_task',
+    'check-scheduled-posts-every-minute': {
+        'task': 'web.panel.tasks.check_scheduled_posts',
         'schedule': crontab(minute='*/1'),
     },
 }

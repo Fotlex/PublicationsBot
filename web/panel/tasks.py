@@ -1,109 +1,73 @@
-import json
-import time
-from contextlib import ExitStack
-
 import requests
 from celery import shared_task
+from django.utils import timezone
 
 from config import config
-from .models import Mailing, User
+from .models import Publication
+
+@shared_task
+def publish_single_post(post_id: int):
+    try:
+        post = Publication.objects.get(id=post_id)
+    except Publication.DoesNotExist:
+        return
+
+    if post.status != 'scheduled':
+        return
+
+    if not post.chat.chat_id:
+        post.status = 'error'
+        post.error_message = "Ошибка: В админке не указан реальный chat_id для этой группы!"
+        post.save()
+        return
+
+    payload = {
+        'chat_id': post.chat.chat_id,
+        'parse_mode': 'HTML'
+    }
+
+    if post.topic and post.topic.thread_id:
+        payload['message_thread_id'] = post.topic.thread_id
+
+    text = post.text or ""
+    if post.author and post.author.signature_name:
+        text += f"\n\nАвтор поста: <b>{post.author.signature_name}</b>"
+
+    media = post.media.first()
+    url = f'https://api.telegram.org/bot{config.BOT_TOKEN}/'
+
+    try:
+        if not media:
+            payload['text'] = text
+            response = requests.post(url + 'sendMessage', json=payload)
+        else:
+            payload['caption'] = text
+            payload[media.media_type] = media.file_id
+            
+            api_method = f'send{media.media_type.capitalize()}'
+            response = requests.post(url + api_method, json=payload)
+
+        resp_data = response.json()
+        
+        if resp_data.get('ok'):
+            post.status = 'published'
+            post.published_at = timezone.now()
+            post.error_message = ""
+        else:
+            post.status = 'error'
+            post.error_message = resp_data.get('description', 'Неизвестная ошибка API')
+            
+    except Exception as e:
+        post.status = 'error'
+        post.error_message = str(e)
+
+    post.save()
 
 
 @shared_task
-def send_mailing(mailing_id: int):
-    mailing = Mailing.objects.get(id=mailing_id)
-
-    attachments = mailing.attachments.all()
-
-    def send_mail(user_id):
-        if not attachments:
-            requests.post(
-                url=f'https://api.telegram.org/bot{config.BOT_TOKEN}/sendMessage',
-                json={
-                    'chat_id': user_id,
-                    'text': mailing.text,
-                }
-            )
-            return
-
-        if len(attachments) == 1:
-            attachment = attachments[0]
-            attachment_type = attachment.type
-
-            if not attachment.file_id:
-                with open(attachment.file.path, 'rb') as f:
-                    files = {attachment_type: f}
-                    response = requests.post(
-                        url=f'https://api.telegram.org/bot{config.BOT_TOKEN}/send{attachment_type.capitalize()}',
-                        data={
-                            'chat_id': user_id,
-                            'caption': mailing.text
-                        },
-                        files=files
-                    )
-
-                    if attachment_type == 'photo':
-                        file_id = response.json()['result']['photo'][-1]['file_id']
-                    else:
-                        print(response.json())
-                        file_id = response.json()['result'][attachment_type]['file_id']
-
-                    attachment.file_id = file_id
-                    attachment.save()
-                    return
-
-            requests.post(
-                url=f'https://api.telegram.org/bot{config.BOT_TOKEN}/send{attachment_type.capitalize()}',
-                data={
-                    'chat_id': user_id,
-                    'caption': mailing.text,
-                    attachment_type: attachment.file_id,
-                }
-            )
-            return
-
-        with ExitStack() as stack:
-            media_group = [
-                {
-                    'type': attachment.type,
-                    'media': f'attach://{attachment.file.name}' if not attachment.file_id else attachment.file_id,
-                } for attachment in attachments
-            ]
-
-            media_group[0]['caption'] = mailing.text
-
-            files = {}
-            for attachment in attachments:
-                if not attachment.file_id:
-                    file_obj = stack.enter_context(open(attachment.file.path, 'rb'))
-                    files[attachment.file.name] = file_obj
-
-            response = requests.post(
-                f'https://api.telegram.org/bot{config.BOT_TOKEN}/sendMediaGroup',
-                data={'chat_id': user_id, 'media': json.dumps(media_group)},
-                files=files if files else None
-            )
-
-            json_response = response.json()
-
-            for i, attachment in enumerate(attachments):
-                if attachment.type == 'photo':
-                    attachment.file_id = json_response['result'][i][attachment.type][-1]['file_id']
-                else:
-                    attachment.file_id = json_response['result'][i][attachment.type]['file_id']
-                attachment.save()
-
-    def send_mail_delay(user_id: int):
-        send_mail(user_id)
-        time.sleep(0.01)
-
-    for user in User.objects.all():
-        send_mail_delay(user.id)
-
-    mailing.is_ok = True
-    mailing.save()
-
-
-@shared_task
-def example_task():
-    print("Пример периодической задачи")
+def check_scheduled_posts():
+    now = timezone.now()
+    due_posts = Publication.objects.filter(status='scheduled', scheduled_at__lte=now)
+    
+    for post in due_posts:
+        publish_single_post.delay(post.id)
