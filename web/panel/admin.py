@@ -92,7 +92,7 @@ class PublicationMediaInline(admin.TabularInline):
 
 @admin.register(Publication)
 class PublicationAdmin(admin.ModelAdmin):
-    list_display = ('id', 'chat', 'topic', 'status', 'publish_method', 'scheduled_at', 'author')
+    list_display = ('id', 'chat', 'topic', 'status', 'error_message', 'publish_method', 'scheduled_at', 'author')
     list_filter = ('status', 'publish_method', 'chat', 'author', 'created_at')
     search_fields = ('text', 'error_message', 'chat__internal_name')
     readonly_fields = ('batch_id', 'created_at', 'published_at', 'error_message')
