@@ -10,6 +10,9 @@ class UserMiddleware(BaseMiddleware):
             event: Message | CallbackQuery,
             data: Dict[str, Any]
     ) -> Any:
+        if getattr(event, "chat", None) and event.chat.type != "private":
+            return await handler(event, data)
+        
         from_user = event.from_user
 
 

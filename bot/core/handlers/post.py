@@ -264,9 +264,8 @@ async def calculate_and_show_slots(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "cancel_publish")
 async def cancel_publish(callback: CallbackQuery, state: FSMContext):
-    await state.clear()
-    await callback.message.edit_text("❌ Публикация отменена. Можете отправить новый пост.")
-
+    await state.set_state(CreatePost.waiting_for_post)
+    await callback.message.edit_text("❌ Публикация отменена.\n\nОтправьте или перешлите мне новый пост.")
 
 @router.callback_query(F.data == "confirm_publish")
 async def confirm_publish(callback: CallbackQuery, state: FSMContext):
@@ -312,8 +311,8 @@ async def save_publications(callback: CallbackQuery, state: FSMContext):
                 )
 
     await _create_posts()
-    await state.clear()
+    await state.set_state(CreatePost.waiting_for_post)
     
     method = data.get('publish_method')
-    msg = "✅ Посты отправлены в очередь на мгновенную публикацию!" if method == "instant" else "✅ Посты успешно запланированы!"
+    msg = "✅ Посты отправлены в очередь на мгновенную публикацию!\n\nОтправьте или перешлите мне новый пост." if method == "instant" else "✅ Посты успешно запланированы!\n\nОтправьте следующий пост."
     await callback.message.edit_text(msg)
