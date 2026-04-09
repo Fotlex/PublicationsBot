@@ -12,7 +12,7 @@ from aiogram import Bot, Dispatcher
 from config import config
 import asyncio
 
-from core.handlers import post
+from core.handlers import post, chat_events
 from core.middlewares import UserMiddleware
 from aiogram.utils.callback_answer import CallbackAnswerMiddleware
 
@@ -26,6 +26,7 @@ async def main():
     dp.message.outer_middleware(UserMiddleware())
     dp.include_routers(
         post.router,
+        chat_events.router,
     )
 
     logging.basicConfig(level=logging.INFO)
