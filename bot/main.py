@@ -15,6 +15,7 @@ import asyncio
 from core.handlers import post, chat_events
 from core.middlewares import UserMiddleware
 from aiogram.utils.callback_answer import CallbackAnswerMiddleware
+from aiogram.types import BotCommand
 
 
 async def main():
@@ -24,6 +25,12 @@ async def main():
     dp.callback_query.outer_middleware(CallbackAnswerMiddleware())
     dp.callback_query.outer_middleware(UserMiddleware())
     dp.message.outer_middleware(UserMiddleware())
+    
+    main_menu_commands = [
+        BotCommand(command='/regtopic', description='Зарегестрировать топик'),
+    ]
+    await bot.set_my_commands(main_menu_commands)
+    
     dp.include_routers(
         post.router,
         chat_events.router,
