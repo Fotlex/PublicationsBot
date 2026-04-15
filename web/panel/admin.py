@@ -1,9 +1,14 @@
+import re
+import requests
+
+from django import forms
 from django.contrib import admin
 from django.utils.html import format_html
 from django.template import Engine, Context
 from django.http import HttpResponse
 from django.db.models import Count
 from django.utils import timezone
+from config import config
 
 from .utils import html
 from .models import *
@@ -149,3 +154,89 @@ class AnalyticsAdmin(admin.ModelAdmin):
             'site_header': self.admin_site.site_header,
         })
         return HttpResponse(template.render(context))
+    
+    
+class TopicAdminForm(forms.ModelForm):
+    topic_link = forms.CharField(
+        label='🔗 Вставить ссылку на топик',
+        required=False,
+        help_text='Например: https://t.me/c/123456789/45. Если вставить ссылку, поля "Группа" и "ID топика" заполнятся автоматически!'
+    )
+
+    class Meta:
+        model = Topic
+        fields = ['topic_link', 'chat', 'thread_id', 'name', 'is_active']
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if 'chat' in self.fields:
+            self.fields['chat'].required = False
+        if 'thread_id' in self.fields:
+            self.fields['thread_id'].required = False
+
+    def clean(self):
+        cleaned_data = super().clean()
+        topic_link = cleaned_data.get('topic_link')
+        
+        if topic_link:
+            private_match = re.search(r't\.me/c/(\d+)/(\d+)', topic_link)
+            public_match = re.search(r't\.me/([a-zA-Z0-9_]+)/(\d+)', topic_link)
+            
+            chat_id = None
+            thread_id = None
+            
+            if private_match:
+                chat_id = int(f"-100{private_match.group(1)}")
+                thread_id = int(private_match.group(2))
+            elif public_match:
+                username = f"@{public_match.group(1)}"
+                thread_id = int(public_match.group(2))
+                try:
+                    resp = requests.get(f"https://api.telegram.org/bot{config.BOT_TOKEN}/getChat", params={"chat_id": username}).json()
+                    if resp.get("ok"):
+                        chat_id = resp["result"]["id"]
+                    else:
+                        self.add_error('topic_link', f"Не удалось найти публичную группу {username}.")
+                except Exception:
+                    self.add_error('topic_link', "Ошибка соединения с Telegram API.")
+            else:
+                self.add_error('topic_link', "Неверный формат ссылки. Нужна ссылка вида https://t.me/...")
+
+            if chat_id and thread_id is not None:
+                try:
+                    chat_obj = TelegramChat.objects.get(chat_id=chat_id)
+                    cleaned_data['chat'] = chat_obj
+                    cleaned_data['thread_id'] = thread_id
+                    
+                    if chat_obj.chat_type != 'topic_group':
+                        chat_obj.chat_type = 'topic_group'
+                        chat_obj.save(update_fields=['chat_type'])
+                        
+                except TelegramChat.DoesNotExist:
+                    self.add_error('topic_link', "Группа из этой ссылки еще не добавлена в базу бота (добавьте бота в чат).")
+        
+        if not cleaned_data.get('chat'):
+            self.add_error('chat', "Выберите группу из списка ИЛИ вставьте ссылку на топик.")
+        if cleaned_data.get('thread_id') is None:
+            self.add_error('thread_id', "Введите ID топика вручную ИЛИ вставьте ссылку.")
+            
+        return cleaned_data
+
+
+@admin.register(Topic)
+class TopicAdmin(admin.ModelAdmin):
+    form = TopicAdminForm
+    list_display = ('name', 'chat', 'thread_id', 'is_active')
+    list_filter = ('chat', 'is_active')
+    search_fields = ('name', 'chat__internal_name')
+    
+    fieldsets = (
+        ('Быстрое добавление (Рекомендуется)', {
+            'fields': ('name', 'topic_link'),
+            'description': 'Вставьте ссылку на топик, и мы сами найдем нужную группу и ID.'
+        }),
+        ('Детальные настройки (Заполнятся сами)', {
+            'fields': ('chat', 'thread_id', 'is_active'),
+            'classes': ('collapse',),
+        }),
+    )
