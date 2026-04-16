@@ -93,6 +93,7 @@ class DefaultImageAdmin(admin.ModelAdmin):
 class PublicationMediaInline(admin.TabularInline):
     model = PublicationMedia
     extra = 0
+    fields = ('media_type', 'file', 'file_id') 
     readonly_fields = ('file_id',)
 
 @admin.register(Publication)

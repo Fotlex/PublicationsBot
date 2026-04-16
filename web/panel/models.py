@@ -172,7 +172,8 @@ class PublicationMedia(models.Model):
 
     publication = models.ForeignKey(Publication, on_delete=models.CASCADE, related_name='media', verbose_name='Публикация')
     media_type = models.CharField('Тип медиа', max_length=20, choices=TYPE_CHOICES)
-    file_id = models.CharField('File ID (Телеграм)', max_length=255)
+    file_id = models.CharField('File ID (Телеграм)', max_length=255, blank=True, null=True)
+    file = models.FileField('Файл (из админки)', upload_to='publications_media/', blank=True, null=True)
 
     class Meta:
         verbose_name = 'Медиафайл'
