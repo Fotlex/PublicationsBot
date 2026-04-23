@@ -13,7 +13,7 @@ from core.states import CreatePost
 from core.keyboards import (
     get_default_images_kb, get_groups_kb, get_topics_kb,
     get_publish_method_kb, get_confirm_kb,
-    DefaultImgCB, GroupCB, TopicCB, PublishMethodCB
+    DefaultImgCB, GroupCB, TopicCB, PublishMethodCB, get_finish_post_kb
 )
 from web.panel.models import DefaultImage, User, TelegramChat, Topic, Slot, Publication, PublicationMedia
 
@@ -27,36 +27,71 @@ def get_user_chats(user_id: int):
 @router.message(CommandStart())
 async def cmd_start(message: Message, user: User, state: FSMContext):
     await state.clear()
+    await state.update_data(post_data={'text': '', 'media_type': None, 'file_id': None}) # Инициализируем пустую дату
+    
     await message.answer(
         f"👋 Привет, {user.fio or message.from_user.first_name}!\n\n"
-        "Отправьте или перешлите мне сообщение, которое хотите опубликовать."
+        "Отправьте или перешлите мне сообщение, которое хотите опубликовать.\n"
+        "<i>💡 Если текст слишком длинный, просто отправьте его несколькими сообщениями подряд. "
+        "Когда закончите, нажмите кнопку под сообщением.</i>",
+        parse_mode="HTML"
     )
     await state.set_state(CreatePost.waiting_for_post)
 
+
 @router.message(CreatePost.waiting_for_post)
 async def receive_post(message: Message, state: FSMContext):
-    text = message.html_text or ""
-    media_type, file_id = None, None
-    
-    if message.photo:
-        media_type, file_id = 'photo', message.photo[-1].file_id
-    elif message.video:
-        media_type, file_id = 'video', message.video.file_id
-    elif message.document:
-        media_type, file_id = 'document', message.document.file_id
+    data = await state.get_data()
+    post_data = data.get('post_data', {'text': '', 'media_type': None, 'file_id': None})
 
-    await state.update_data(post_data={'text': text, 'media_type': media_type, 'file_id': file_id})
+    new_text = message.html_text or ""
+    if new_text:
+        if post_data['text']:
+            post_data['text'] += f"\n\n{new_text}" 
+        else:
+            post_data['text'] = new_text
 
-    if not media_type:
+    if not post_data['media_type']:
+        if message.photo:
+            post_data['media_type'], post_data['file_id'] = 'photo', message.photo[-1].file_id
+        elif message.video:
+            post_data['media_type'], post_data['file_id'] = 'video', message.video.file_id
+        elif message.document:
+            post_data['media_type'], post_data['file_id'] = 'document', message.document.file_id
+
+    await state.update_data(post_data=post_data)
+
+    await message.answer(
+        "✅ Сообщение принято в буфер!\n"
+        f"<i>Текущая длина поста: {len(post_data['text'])} симв.</i>\n\n"
+        "Вы можете отправить <b>еще часть текста</b> (она добавится в конец), "
+        "либо нажмите кнопку ниже, если пост готов.",
+        reply_markup=get_finish_post_kb(),
+        parse_mode="HTML"
+    )
+
+
+@router.callback_query(F.data == "finish_post_input", CreatePost.waiting_for_post)
+async def finish_post_input(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    post_data = data.get('post_data', {})
+
+    if not post_data.get('text') and not post_data.get('media_type'):
+        await callback.answer("⚠️ Вы не прислали ни текста, ни медиа!", show_alert=True)
+        return
+
+    await callback.message.delete()
+
+    if not post_data.get('media_type'):
         images = [img async for img in DefaultImage.objects.all()]
         if images:
-            await message.answer("Выберите картинку для поста:", reply_markup=get_default_images_kb(images))
+            await callback.message.answer("Выберите картинку для поста:", reply_markup=get_default_images_kb(images))
             await state.set_state(CreatePost.waiting_for_image)
             return
 
-    await show_groups_menu(message, state, message.from_user.id)
-
-
+    await show_groups_menu(callback.message, state, callback.from_user.id)
+    
+    
 @router.callback_query(DefaultImgCB.filter(), CreatePost.waiting_for_image)
 async def process_default_image(callback: CallbackQuery, callback_data: DefaultImgCB, state: FSMContext, bot: Bot):
     if callback_data.id != "none":
@@ -264,9 +299,14 @@ async def calculate_and_show_slots(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "cancel_publish")
 async def cancel_publish(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    
+    await state.update_data(post_data={'text': '', 'media_type': None, 'file_id': None})
     await state.set_state(CreatePost.waiting_for_post)
-    await callback.message.edit_text("❌ Публикация отменена.\n\nОтправьте или перешлите мне новый пост.")
-
+    
+    await callback.message.edit_text("❌ Создание поста отменено.\n\nОтправьте или перешлите мне новый пост.")
+    
+    
 @router.callback_query(F.data == "confirm_publish")
 async def confirm_publish(callback: CallbackQuery, state: FSMContext):
     await save_publications(callback, state)

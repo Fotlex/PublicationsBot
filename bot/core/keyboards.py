@@ -63,3 +63,11 @@ def get_confirm_kb() -> InlineKeyboardMarkup:
     builder.button(text="❌ Отмена", callback_data="cancel_publish")
     builder.adjust(2)
     return builder.as_markup()
+
+
+def get_finish_post_kb() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Завершить ввод текста", callback_data="finish_post_input")
+    builder.button(text="❌ Отменить", callback_data="cancel_publish")
+    builder.adjust(1)
+    return builder.as_markup()
