@@ -18,6 +18,8 @@ class Config(BaseSettings):
 
     REDIS_HOST: str
     REDIS_PORT: str
+    
+    PROXI: str
 
     class Config:
         env_file = ".env"

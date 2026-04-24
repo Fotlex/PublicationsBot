@@ -12,6 +12,8 @@ from aiogram import Bot, Dispatcher
 from config import config
 import asyncio
 
+from aiogram.client.session.aiohttp import AiohttpSession
+
 from core.handlers import post, chat_events
 from core.middlewares import UserMiddleware
 from aiogram.utils.callback_answer import CallbackAnswerMiddleware
@@ -19,7 +21,9 @@ from aiogram.types import BotCommand
 
 
 async def main():
-    bot = Bot(token=config.BOT_TOKEN)
+    session = AiohttpSession(proxy=config.PROXI)
+    
+    bot = Bot(token=config.BOT_TOKEN, session=session)
 
     dp = Dispatcher()
     dp.callback_query.outer_middleware(CallbackAnswerMiddleware())
