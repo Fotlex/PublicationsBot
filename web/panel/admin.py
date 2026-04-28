@@ -49,7 +49,7 @@ class SlotInline(admin.TabularInline):
 
 @admin.register(TelegramChat)
 class TelegramChatAdmin(admin.ModelAdmin):
-    list_display = ('internal_name', 'chat_type', 'connection_status', 'is_active')
+    list_display = ('internal_name', 'chat_type', 'connection_status', 'is_active', 'restrict_posting_until')
     list_filter = ('chat_type', 'connection_status', 'is_active')
     search_fields = ('internal_name', 'chat_id')
     inlines = [TopicInline, SlotInline]

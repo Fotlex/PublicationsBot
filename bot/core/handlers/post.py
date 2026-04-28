@@ -27,7 +27,7 @@ def get_user_chats(user_id: int):
 @router.message(CommandStart())
 async def cmd_start(message: Message, user: User, state: FSMContext):
     await state.clear()
-    await state.update_data(post_data={'text': '', 'media_type': None, 'file_id': None}) # Инициализируем пустую дату
+    await state.update_data(post_data={'text': '', 'media_type': None, 'file_id': None})
     
     await message.answer(
         f"👋 Привет, {user.fio or message.from_user.first_name}!\n\n"
@@ -232,9 +232,16 @@ async def process_datetime(message: Message, state: FSMContext):
 def _get_next_slots(selected_groups, selected_topics):
     now = timezone.now()
     results = {}
+    
+    chats = {c.id: c for c in TelegramChat.objects.filter(id__in=selected_groups)}
+    
     for chat_id in selected_groups:
-        topic_id = selected_topics.get(chat_id)
+        chat = chats[chat_id]
+        restriction = chat.restrict_posting_until
         
+        search_start = restriction if restriction and restriction > now else now
+
+        topic_id = selected_topics.get(chat_id)
         if topic_id:
             slots = Slot.objects.filter(topic_id=topic_id).order_by('day_of_week', 'time')
         else:
@@ -245,10 +252,9 @@ def _get_next_slots(selected_groups, selected_topics):
             continue
 
         slots = list(slots)
-        current_weekday = now.weekday()
-        current_time = now.time()
+        current_weekday = search_start.weekday()
+        current_time = search_start.time()
         best_slot_dt = None
-
 
         for i in range(8):
             check_day = (current_weekday + i) % 7
@@ -256,7 +262,7 @@ def _get_next_slots(selected_groups, selected_topics):
                 if slot.day_of_week == check_day:
                     if i == 0 and slot.time <= current_time:
                         continue
-                    target_date = now.date() + timedelta(days=i)
+                    target_date = search_start.date() + timedelta(days=i)
                     best_slot_dt = timezone.make_aware(datetime.combine(target_date, slot.time))
                     break
             if best_slot_dt:
@@ -320,17 +326,27 @@ async def save_publications(callback: CallbackQuery, state: FSMContext):
     def _create_posts():
         batch_id = uuid.uuid4()
         method = data['publish_method']
+        now = timezone.now()
+        
+        chats = {c.id: c for c in TelegramChat.objects.filter(id__in=data['selected_groups'])}
         
         for chat_id in data['selected_groups']:
             topic_id = data.get('selected_topics', {}).get(chat_id)
+            chat = chats[chat_id]
+            restriction = chat.restrict_posting_until
             
             if method == "schedule":
                 dt_naive = dateutil.parser.isoparse(data['scheduled_time'])
                 pub_scheduled_at = timezone.make_aware(dt_naive)
+                if restriction and restriction > now and pub_scheduled_at < restriction:
+                    pub_scheduled_at = restriction
             elif method == "slot":
                 pub_scheduled_at = dateutil.parser.isoparse(data['slot_times'][str(chat_id)])
             else:
-                pub_scheduled_at = timezone.now()
+                if restriction and restriction > now:
+                    pub_scheduled_at = restriction
+                else:
+                    pub_scheduled_at = now
 
             pub = Publication.objects.create(
                 batch_id=batch_id,
@@ -354,5 +370,8 @@ async def save_publications(callback: CallbackQuery, state: FSMContext):
     await state.set_state(CreatePost.waiting_for_post)
     
     method = data.get('publish_method')
-    msg = "✅ Посты отправлены в очередь на мгновенную публикацию!\n\nОтправьте или перешлите мне новый пост." if method == "instant" else "✅ Посты успешно запланированы!\n\nОтправьте следующий пост."
+    if method == "instant":
+        msg = "✅ Посты успешно поставлены в очередь (опубликуются сразу, если нет ограничений группы)!\n\nОтправьте или перешлите мне новый пост."
+    else:
+        msg = "✅ Посты успешно запланированы!\n\nОтправьте следующий пост."
     await callback.message.edit_text(msg)

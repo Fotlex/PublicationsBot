@@ -7,10 +7,6 @@ from .models import Publication
 
 
 def split_text(text, limit=4096):
-    """
-    Разбивает длинный текст на части (chunks).
-    Старается резать по абзацам (\n\n) или переносам строк (\n), чтобы не ломать слова.
-    """
     if not text:
         return []
     
@@ -92,22 +88,38 @@ def publish_single_post(post_id: int):
     if post.author and post.author.signature_name:
         full_text += f"\n\nАвтор поста: <b>{post.author.signature_name}</b>"
 
-    media = post.media.first()
     url = f'https://api.telegram.org/bot{config.BOT_TOKEN}/'
 
     try:
-        if media:
-            if len(full_text) <= 1024:
-                _send_media(url, base_payload, media, caption=full_text)
+        media_files = list(post.media.all())
+        visuals = [m for m in media_files if m.media_type in ['photo', 'video']]
+        documents = [m for m in media_files if m.media_type == 'document']
+
+        text_fits_caption = len(full_text) <= 1024
+        text_sent = False
+
+        for idx, vis in enumerate(visuals):
+            if idx == 0 and text_fits_caption and full_text:
+                _send_media(url, base_payload, vis, caption=full_text)
+                text_sent = True
             else:
-                _send_media(url, base_payload, media, caption="")
+                _send_media(url, base_payload, vis, caption="")
+
+        if not text_sent and full_text:
+            if not visuals and documents and text_fits_caption:
+                pass
+            else:
                 text_chunks = split_text(full_text, limit=4096)
                 for chunk in text_chunks:
                     _send_text(url, base_payload, chunk)
-        else:
-            text_chunks = split_text(full_text, limit=4096)
-            for chunk in text_chunks:
-                _send_text(url, base_payload, chunk)
+                text_sent = True
+
+        for idx, doc in enumerate(documents):
+            if idx == 0 and not text_sent and text_fits_caption and full_text:
+                _send_media(url, base_payload, doc, caption=full_text)
+                text_sent = True
+            else:
+                _send_media(url, base_payload, doc, caption="")
 
         post.status = 'published'
         post.published_at = timezone.now()
@@ -118,7 +130,7 @@ def publish_single_post(post_id: int):
         post.error_message = str(e)
 
     post.save(update_fields=['status', 'published_at', 'error_message'])
-
+    
 
 @shared_task
 def check_scheduled_posts():

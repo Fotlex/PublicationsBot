@@ -24,6 +24,12 @@ class TelegramChat(models.Model):
     connection_status = models.CharField('Статус подключения', max_length=20, choices=STATUS_CHOICES, default='no_bot')
     is_active = models.BooleanField('Активность (вкл/выкл)', default=True)
 
+    restrict_posting_until = models.DateTimeField(
+        'Ограничение отправки новых постов до:',
+        null=True, blank=True,
+        help_text='Если дата указана и еще не наступила, все новые мгновенные и слотовые посты будут отправлены не раньше этого времени.'
+    )
+    
     def __str__(self):
         return self.internal_name
 
