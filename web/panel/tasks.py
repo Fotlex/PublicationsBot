@@ -6,6 +6,12 @@ from config import config
 from .models import Publication
 
 
+def get_proxies():
+    if getattr(config, 'PROXI', None):
+        return {'http': config.PROXI, 'https': config.PROXI}
+    return None
+
+
 def split_text(text, limit=4096):
     if not text:
         return []
@@ -32,7 +38,7 @@ def split_text(text, limit=4096):
 def _send_text(url, base_payload, text):
     payload = base_payload.copy()
     payload['text'] = text
-    response = requests.post(url + 'sendMessage', json=payload)
+    response = requests.post(url + 'sendMessage', json=payload, proxies=get_proxies())
     resp_data = response.json()
     
     if not resp_data.get('ok'):
@@ -48,18 +54,17 @@ def _send_media(url, base_payload, media, caption=""):
     
     if media.file_id:
         payload[media.media_type] = media.file_id
-        response = requests.post(url + api_method, json=payload)
+        response = requests.post(url + api_method, json=payload, proxies=get_proxies())
     elif media.file:
         with open(media.file.path, 'rb') as f:
             files = {media.media_type: f}
-            response = requests.post(url + api_method, data=payload, files=files)
+            response = requests.post(url + api_method, data=payload, files=files, proxies=get_proxies())
     else:
         raise Exception("В медиафайле не указан ни file_id, ни загруженный файл")
         
     resp_data = response.json()
     if not resp_data.get('ok'):
         raise Exception(resp_data.get('description', f'Ошибка отправки {api_method}'))
-
 
 @shared_task
 def publish_single_post(post_id: int):

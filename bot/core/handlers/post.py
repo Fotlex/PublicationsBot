@@ -367,6 +367,7 @@ async def save_publications(callback: CallbackQuery, state: FSMContext):
                 )
 
     await _create_posts()
+    await state.update_data(post_data={'text': '', 'media_type': None, 'file_id': None})
     await state.set_state(CreatePost.waiting_for_post)
     
     method = data.get('publish_method')
