@@ -57,7 +57,7 @@ class TelegramChatAdmin(admin.ModelAdmin):
 @admin.register(Slot)
 class SlotAdmin(admin.ModelAdmin):
     list_display = ('get_parent', 'day_of_week', 'time')
-    list_filter = ('day_of_week', 'chat', 'topic__chat')
+    list_filter = ('day_of_week', 'chat')
     
     def get_parent(self, obj):
         if obj.topic:
