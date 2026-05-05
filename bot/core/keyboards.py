@@ -5,6 +5,11 @@ from aiogram.filters.callback_data import CallbackData
 
 class DefaultImgCB(CallbackData, prefix="dimg"):
     id: str
+    
+
+class DefaultImgPageCB(CallbackData, prefix="dimpg"):
+    page: int    
+
 
 class GroupCB(CallbackData, prefix="grp"):
     id: int
@@ -19,12 +24,30 @@ class PublishMethodCB(CallbackData, prefix="pubm"):
     method: str
 
 
-def get_default_images_kb(images) -> InlineKeyboardMarkup:
+def get_default_images_kb(images: list, page: int = 0, items_per_page: int = 10) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    for img in images:
+    
+    start_idx = page * items_per_page
+    end_idx = start_idx + items_per_page
+    page_images = images[start_idx:end_idx]
+    
+    for img in page_images:
         builder.button(text=img.name, callback_data=DefaultImgCB(id=str(img.id)))
-    builder.button(text="Без картинки", callback_data=DefaultImgCB(id="none"))
     builder.adjust(1)
+    
+    total_pages = (len(images) + items_per_page - 1) // items_per_page
+    nav_buttons = []
+    
+    if page > 0:
+        nav_buttons.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=DefaultImgPageCB(page=page-1).pack()))
+    if page < total_pages - 1:
+        nav_buttons.append(InlineKeyboardButton(text="Вперед ➡️", callback_data=DefaultImgPageCB(page=page+1).pack()))
+        
+    if nav_buttons:
+        builder.row(*nav_buttons)
+        
+    builder.row(InlineKeyboardButton(text="Без картинки", callback_data=DefaultImgCB(id="none").pack()))
+    
     return builder.as_markup()
 
 def get_groups_kb(chats, selected_ids: list[int]) -> InlineKeyboardMarkup:

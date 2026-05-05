@@ -13,7 +13,7 @@ from core.states import CreatePost
 from core.keyboards import (
     get_default_images_kb, get_groups_kb, get_topics_kb,
     get_publish_method_kb, get_confirm_kb,
-    DefaultImgCB, GroupCB, TopicCB, PublishMethodCB, get_finish_post_kb
+    DefaultImgCB, DefaultImgPageCB, GroupCB, TopicCB, PublishMethodCB, get_finish_post_kb
 )
 from web.panel.models import DefaultImage, User, TelegramChat, Topic, Slot, Publication, PublicationMedia
 
@@ -83,15 +83,23 @@ async def finish_post_input(callback: CallbackQuery, state: FSMContext):
     await callback.message.delete()
 
     if not post_data.get('media_type'):
-        images = [img async for img in DefaultImage.objects.all()]
+        images = [img async for img in DefaultImage.objects.order_by('name')]
         if images:
-            await callback.message.answer("Выберите картинку для поста:", reply_markup=get_default_images_kb(images))
+            await callback.message.answer("Выберите картинку для поста:", reply_markup=get_default_images_kb(images, page=0))
             await state.set_state(CreatePost.waiting_for_image)
             return
 
-    await show_groups_menu(callback.message, state, callback.from_user.id)
-    
-    
+    await show_groups_menu(callback.message, state, callback.fromuser.id)    
+
+
+@router.callback_query(DefaultImgPageCB.filter(), CreatePost.waiting_for_image)
+async def process_image_pagination(callback: CallbackQuery, callback_data: DefaultImgPageCB):
+    images = [img async for img in DefaultImage.objects.order_by('name')]
+    await callback.message.edit_reply_markup(
+        reply_markup=get_default_images_kb(images, page=callback_data.page)
+    )
+
+
 @router.callback_query(DefaultImgCB.filter(), CreatePost.waiting_for_image)
 async def process_default_image(callback: CallbackQuery, callback_data: DefaultImgCB, state: FSMContext, bot: Bot):
     if callback_data.id != "none":
