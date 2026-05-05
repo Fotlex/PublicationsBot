@@ -250,9 +250,12 @@ def _get_next_slots(selected_groups, selected_topics):
         search_start = restriction if restriction and restriction > now else now
 
         topic_id = selected_topics.get(chat_id)
+        slots = None
+        
         if topic_id:
             slots = Slot.objects.filter(topic_id=topic_id).order_by('day_of_week', 'time')
-        else:
+            
+        if not slots or not slots.exists():
             slots = Slot.objects.filter(chat_id=chat_id).order_by('day_of_week', 'time')
 
         if not slots.exists():
