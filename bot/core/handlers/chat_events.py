@@ -2,6 +2,7 @@ from aiogram import Router, F
 from aiogram.types import ChatMemberUpdated, Message
 from aiogram.filters import Command
 from web.panel.models import TelegramChat, Topic
+from django.db import IntegrityError
 
 router = Router()
 
@@ -77,11 +78,20 @@ async def on_forum_topic_action(message: Message):
         if not has_topic:
             defaults['name'] = f"Топик {thread_id}"
 
-    await Topic.objects.aupdate_or_create(
-        chat=tg_chat,
-        thread_id=thread_id,
-        defaults=defaults
-    )
+    try:
+        await Topic.objects.aupdate_or_create(
+            chat=tg_chat,
+            thread_id=thread_id,
+            defaults=defaults
+        )
+    except IntegrityError:
+        if 'name' in defaults:
+            defaults['name'] = f"{defaults['name']} (ID:{thread_id})"
+            await Topic.objects.aupdate_or_create(
+                chat=tg_chat,
+                thread_id=thread_id,
+                defaults=defaults
+            )
 
 
 @router.message(Command("regtopic"))
@@ -97,10 +107,12 @@ async def cmd_register_topic(message: Message):
 
     tg_chat = await TelegramChat.objects.aget(chat_id=message.chat.id)
     
-    await Topic.objects.aupdate_or_create(
-        chat=tg_chat,
-        thread_id=message.message_thread_id,
-        defaults={'name': name, 'is_active': True}
-    )
-    
-    await message.answer(f"✅ Топик <b>{name}</b> успешно сохранен в базу данных!", parse_mode="HTML")
+    try:
+        await Topic.objects.aupdate_or_create(
+            chat=tg_chat,
+            thread_id=message.message_thread_id,
+            defaults={'name': name, 'is_active': True}
+        )
+        await message.answer(f"✅ Топик <b>{name}</b> успешно сохранен в базу данных!", parse_mode="HTML")
+    except IntegrityError:
+        await message.answer(f"⚠️ Ошибка! Топик с названием <b>{name}</b> уже существует в этой группе. Пожалуйста, выберите другое название.", parse_mode="HTML")

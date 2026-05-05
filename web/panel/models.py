@@ -78,7 +78,7 @@ class Topic(models.Model):
     class Meta:
         verbose_name = 'Топик'
         verbose_name_plural = 'Топики'
-        unique_together = ('chat', 'thread_id')
+        unique_together = (('chat', 'thread_id'), ('chat', 'name'))
 
 
 class Slot(models.Model):
@@ -99,6 +99,8 @@ class Slot(models.Model):
     time = models.TimeField('Время публикации (ЧЧ:ММ)')
     
     def clean(self):
+        super().clean()
+
         if not self.chat and not self.topic:
             raise ValidationError("Слот должен быть привязан к группе или топику.")
         if self.chat and self.topic:
@@ -106,10 +108,22 @@ class Slot(models.Model):
         if self.topic and self.topic.chat.chat_type != 'topic_group':
             raise ValidationError("Выбранный топик не принадлежит группе с топиками.")
             
+        qs = Slot.objects.filter(
+            chat=self.chat,
+            topic=self.topic,
+            day_of_week=self.day_of_week,
+            time=self.time
+        )
+        if self.pk:
+            qs = qs.exclude(pk=self.pk)
+            
+        if qs.exists():
+            raise ValidationError('⚠️ Ошибка! В этой группе (или топике) уже существует слот на этот день и время!')
+            
     def __str__(self):
         parent = self.topic.name if self.topic else self.chat.internal_name
         return f"{parent} | {self.get_day_of_week_display()} в {self.time.strftime('%H:%M')}"
-
+    
     class Meta:
         verbose_name = 'Слот публикации'
         verbose_name_plural = 'Слоты публикаций (Неделя)'
@@ -117,7 +131,7 @@ class Slot(models.Model):
 
 
 class DefaultImage(models.Model):
-    name = models.CharField('Название (для кнопки)', max_length=50)
+    name = models.CharField('Название (для кнопки)', max_length=50, unique=True)
     image = models.ImageField('Картинка', upload_to='default_images/')
     file_id = models.CharField('File ID (Телеграм)', max_length=255, null=True, blank=True, help_text='Заполнится автоматически при первой отправке ботом')
 
