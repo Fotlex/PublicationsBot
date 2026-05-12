@@ -27,8 +27,8 @@ def get_user_chats(user_id: int):
 @router.message(CommandStart())
 async def cmd_start(message: Message, user: User, state: FSMContext):
     await state.clear()
-    await state.update_data(post_data={'text': '', 'media_type': None, 'file_id': None})
-    
+    await state.update_data(post_data={'text': '', 'media': []}) 
+        
     await message.answer(
         f"👋 Привет, {user.fio or message.from_user.first_name}!\n\n"
         "Отправьте или перешлите мне сообщение, которое хотите опубликовать.\n"
@@ -42,30 +42,39 @@ async def cmd_start(message: Message, user: User, state: FSMContext):
 @router.message(CreatePost.waiting_for_post)
 async def receive_post(message: Message, state: FSMContext):
     data = await state.get_data()
-    post_data = data.get('post_data', {'text': '', 'media_type': None, 'file_id': None})
+    post_data = data.get('post_data', {'text': '', 'media': []})
 
     new_text = message.html_text or ""
     if new_text:
-        if post_data['text']:
+        if post_data['text'] and message.media_group_id is None:
             post_data['text'] += f"\n\n{new_text}" 
-        else:
+        elif not post_data['text']:
             post_data['text'] = new_text
 
-    if not post_data['media_type']:
+    current_media = post_data.get('media', [])
+    
+    if len(current_media) < 10:
+        file_id = None
+        media_type = None
+        
         if message.photo:
-            post_data['media_type'], post_data['file_id'] = 'photo', message.photo[-1].file_id
+            media_type, file_id = 'photo', message.photo[-1].file_id
         elif message.video:
-            post_data['media_type'], post_data['file_id'] = 'video', message.video.file_id
+            media_type, file_id = 'video', message.video.file_id
         elif message.document:
-            post_data['media_type'], post_data['file_id'] = 'document', message.document.file_id
+            media_type, file_id = 'document', message.document.file_id
 
+        if file_id:
+            if not any(m['file_id'] == file_id for m in current_media):
+                current_media.append({'type': media_type, 'file_id': file_id})
+
+    post_data['media'] = current_media
     await state.update_data(post_data=post_data)
 
     await message.answer(
-        "✅ Сообщение принято в буфер!\n"
-        f"<i>Текущая длина поста: {len(post_data['text'])} симв.</i>\n\n"
-        "Вы можете отправить <b>еще часть текста</b> (она добавится в конец), "
-        "либо нажмите кнопку ниже, если пост готов.",
+        f"✅ Файлов в буфере: {len(current_media)}/10\n"
+        f"<i>Длина текста: {len(post_data['text'])} симв.</i>\n\n"
+        "Вы можете отправить еще фото/текст или нажать кнопку ниже.",
         reply_markup=get_finish_post_kb(),
         parse_mode="HTML"
     )
@@ -111,7 +120,7 @@ async def process_default_image(callback: CallbackQuery, callback_data: DefaultI
             await msg.delete()
         
         data = await state.get_data()
-        data['post_data'].update({'media_type': 'photo', 'file_id': img.file_id})
+        data['post_data']['media'] = [{'type': 'photo', 'file_id': img.file_id}]
         await state.update_data(post_data=data['post_data'])
 
     await show_groups_menu(callback.message, state, callback.from_user.id)
@@ -332,6 +341,7 @@ async def confirm_publish(callback: CallbackQuery, state: FSMContext):
 async def save_publications(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     user = await User.objects.aget(id=callback.from_user.id)
+    post_content = data['post_data']
     
     @sync_to_async
     def _create_posts():
@@ -361,24 +371,24 @@ async def save_publications(callback: CallbackQuery, state: FSMContext):
 
             pub = Publication.objects.create(
                 batch_id=batch_id,
-                text=data['post_data']['text'],
+                text=post_content['text'],
                 author=user,
                 chat_id=chat_id,
-                topic_id=topic_id,
+                topic_id=data.get('selected_topics', {}).get(chat_id),
                 status='scheduled',
                 publish_method=method,
                 scheduled_at=pub_scheduled_at
             )
 
-            if data['post_data'].get('media_type'):
+            for m in post_content.get('media', []):
                 PublicationMedia.objects.create(
                     publication=pub,
-                    media_type=data['post_data']['media_type'],
-                    file_id=data['post_data']['file_id']
+                    media_type=m['type'],
+                    file_id=m['file_id']
                 )
 
     await _create_posts()
-    await state.update_data(post_data={'text': '', 'media_type': None, 'file_id': None})
+    await state.update_data(post_data={'text': '', 'media': []})
     await state.set_state(CreatePost.waiting_for_post)
     
     method = data.get('publish_method')

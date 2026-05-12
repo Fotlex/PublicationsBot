@@ -1,4 +1,5 @@
 import requests
+import json
 from celery import shared_task
 from django.utils import timezone
 
@@ -66,6 +67,39 @@ def _send_media(url, base_payload, media, caption=""):
     if not resp_data.get('ok'):
         raise Exception(resp_data.get('description', f'Ошибка отправки {api_method}'))
 
+
+def _send_media_group(url, base_payload, media_list, caption=""):
+    payload = base_payload.copy()
+    media_json = []
+    files = {}
+
+    for idx, m in enumerate(media_list):
+        media_item = {'type': m.media_type, 'parse_mode': 'HTML'}
+        if idx == 0 and caption:
+            media_item['caption'] = caption
+
+        if m.file_id:
+            media_item['media'] = m.file_id
+        elif m.file:
+            attach_name = f'file_{idx}'
+            media_item['media'] = f'attach://{attach_name}'
+            files[attach_name] = open(m.file.path, 'rb')
+        else:
+            continue
+        media_json.append(media_item)
+
+    payload['media'] = json.dumps(media_json)
+    try:
+        if files:
+            res = requests.post(url + 'sendMediaGroup', data=payload, files=files, proxies=get_proxies())
+        else:
+            res = requests.post(url + 'sendMediaGroup', json=payload, proxies=get_proxies())
+    finally:
+        for f in files.values(): f.close()
+    
+    if not res.json().get('ok'):
+        raise Exception(res.json().get('description', 'Ошибка альбома'))
+
 @shared_task
 def publish_single_post(post_id: int):
     try:
@@ -103,32 +137,25 @@ def publish_single_post(post_id: int):
         text_fits_caption = len(full_text) <= 1024
         text_sent = False
 
-        for idx, vis in enumerate(visuals):
-            if idx == 0 and text_fits_caption and full_text:
-                _send_media(url, base_payload, vis, caption=full_text)
-                text_sent = True
+        if visuals:
+            caption = full_text if text_fits_caption else ""
+            if len(visuals) > 1:
+                _send_media_group(url, base_payload, visuals, caption=caption)
             else:
-                _send_media(url, base_payload, vis, caption="")
+                _send_media(url, base_payload, visuals[0], caption=caption)
+            if caption:
+                text_sent = True
 
         if not text_sent and full_text:
-            if not visuals and documents and text_fits_caption:
-                pass
-            else:
-                text_chunks = split_text(full_text, limit=4096)
-                for chunk in text_chunks:
-                    _send_text(url, base_payload, chunk)
-                text_sent = True
+            for chunk in split_text(full_text, limit=4096):
+                _send_text(url, base_payload, chunk)
+            text_sent = True
 
-        for idx, doc in enumerate(documents):
-            if idx == 0 and not text_sent and text_fits_caption and full_text:
-                _send_media(url, base_payload, doc, caption=full_text)
-                text_sent = True
-            else:
-                _send_media(url, base_payload, doc, caption="")
-
-        post.status = 'published'
+        for doc in documents:
+            _send_media(url, base_payload, doc, caption="")
+            
         post.published_at = timezone.now()
-        post.error_message = ""
+        post.status = 'published'
         
     except Exception as e:
         post.status = 'error'
