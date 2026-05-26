@@ -272,23 +272,40 @@ def _get_next_slots(selected_groups, selected_topics):
             continue
 
         slots = list(slots)
+        
+        booked_dts = set(
+            Publication.objects.filter(
+                chat_id=chat_id,
+                status='scheduled',
+                scheduled_at__gte=search_start
+            ).values_list('scheduled_at', flat=True)
+        )
+
         current_weekday = search_start.weekday()
         current_time = search_start.time()
         best_slot_dt = None
 
-        for i in range(8):
+        for i in range(30):
             check_day = (current_weekday + i) % 7
             for slot in slots:
                 if slot.day_of_week == check_day:
                     if i == 0 and slot.time <= current_time:
                         continue
+                        
                     target_date = search_start.date() + timedelta(days=i)
-                    best_slot_dt = timezone.make_aware(datetime.combine(target_date, slot.time))
+                    candidate_dt = timezone.make_aware(datetime.combine(target_date, slot.time))
+                    
+                    if candidate_dt in booked_dts:
+                        continue
+                        
+                    best_slot_dt = candidate_dt
                     break
+                    
             if best_slot_dt:
                 break
 
-        results[chat_id] = {"dt": best_slot_dt} if best_slot_dt else {"error": "Слоты настроены криво"}
+        results[chat_id] = {"dt": best_slot_dt} if best_slot_dt else {"error": "Все слоты заняты на месяц вперед"}
+        
     return results
 
 

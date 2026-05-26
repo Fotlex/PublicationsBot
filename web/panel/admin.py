@@ -47,8 +47,20 @@ class SlotInline(admin.TabularInline):
     fields = ('day_of_week', 'time')
 
 
+class TelegramChatAdminForm(forms.ModelForm):
+    class Meta:
+        model = TelegramChat
+        fields = '__all__'
+        widgets = {
+            'restrict_posting_until': forms.DateTimeInput(
+                format='%Y-%m-%dT%H:%M',
+                attrs={'type': 'datetime-local'}
+            )
+        }
+
 @admin.register(TelegramChat)
 class TelegramChatAdmin(admin.ModelAdmin):
+    form = TelegramChatAdminForm
     list_display = ('internal_name', 'chat_type', 'connection_status', 'is_active', 'restrict_posting_until')
     list_filter = ('chat_type', 'connection_status', 'is_active')
     search_fields = ('internal_name', 'chat_id')

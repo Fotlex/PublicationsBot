@@ -24,7 +24,7 @@ class PublishMethodCB(CallbackData, prefix="pubm"):
     method: str
 
 
-def get_default_images_kb(images: list, page: int = 0, items_per_page: int = 10) -> InlineKeyboardMarkup:
+def get_default_images_kb(images: list, page: int = 0, items_per_page: int = 90) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     
     start_idx = page * items_per_page
@@ -33,7 +33,8 @@ def get_default_images_kb(images: list, page: int = 0, items_per_page: int = 10)
     
     for img in page_images:
         builder.button(text=img.name, callback_data=DefaultImgCB(id=str(img.id)))
-    builder.adjust(1)
+        
+    builder.adjust(2) 
     
     total_pages = (len(images) + items_per_page - 1) // items_per_page
     nav_buttons = []
@@ -49,6 +50,7 @@ def get_default_images_kb(images: list, page: int = 0, items_per_page: int = 10)
     builder.row(InlineKeyboardButton(text="Без картинки", callback_data=DefaultImgCB(id="none").pack()))
     
     return builder.as_markup()
+
 
 def get_groups_kb(chats, selected_ids: list[int]) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
