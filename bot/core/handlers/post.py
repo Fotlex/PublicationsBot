@@ -247,7 +247,7 @@ async def process_datetime(message: Message, state: FSMContext):
 
 @sync_to_async
 def _get_next_slots(selected_groups, selected_topics):
-    now = timezone.now()
+    now = timezone.localtime(timezone.now())
     results = {}
     
     chats = {c.id: c for c in TelegramChat.objects.filter(id__in=selected_groups)}
@@ -255,6 +255,9 @@ def _get_next_slots(selected_groups, selected_topics):
     for chat_id in selected_groups:
         chat = chats[chat_id]
         restriction = chat.restrict_posting_until
+        
+        if restriction:
+            restriction = timezone.localtime(restriction)
         
         search_start = restriction if restriction and restriction > now else now
 
@@ -361,6 +364,7 @@ async def save_publications(callback: CallbackQuery, state: FSMContext):
     post_content = data['post_data']
     
     @sync_to_async
+    @sync_to_async
     def _create_posts():
         batch_id = uuid.uuid4()
         method = data['publish_method']
@@ -380,6 +384,8 @@ async def save_publications(callback: CallbackQuery, state: FSMContext):
                     pub_scheduled_at = restriction
             elif method == "slot":
                 pub_scheduled_at = dateutil.parser.isoparse(data['slot_times'][str(chat_id)])
+                if restriction and restriction > now and pub_scheduled_at < restriction:
+                    pub_scheduled_at = restriction
             else:
                 if restriction and restriction > now:
                     pub_scheduled_at = restriction
