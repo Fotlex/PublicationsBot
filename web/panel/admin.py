@@ -48,15 +48,19 @@ class SlotInline(admin.TabularInline):
 
 
 class TelegramChatAdminForm(forms.ModelForm):
+    restrict_posting_until = forms.DateTimeField(
+        label='Ограничение отправки новых постов до:',
+        required=False,
+        widget=forms.DateTimeInput(
+            format='%Y-%m-%dT%H:%M',
+            attrs={'type': 'datetime-local'}
+        ),
+        help_text='Если дата указана и еще не наступила, все новые мгновенные и слотовые посты будут отправлены не раньше этого времени.'
+    )
+
     class Meta:
         model = TelegramChat
         fields = '__all__'
-        widgets = {
-            'restrict_posting_until': forms.DateTimeInput(
-                format='%Y-%m-%dT%H:%M',
-                attrs={'type': 'datetime-local'}
-            )
-        }
 
 @admin.register(TelegramChat)
 class TelegramChatAdmin(admin.ModelAdmin):
