@@ -364,7 +364,6 @@ async def save_publications(callback: CallbackQuery, state: FSMContext):
     post_content = data['post_data']
     
     @sync_to_async
-    @sync_to_async
     def _create_posts():
         batch_id = uuid.uuid4()
         method = data['publish_method']
