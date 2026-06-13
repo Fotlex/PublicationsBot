@@ -8,8 +8,11 @@ from .models import Publication
 
 
 def get_proxies():
-    if getattr(config, 'PROXI', None):
-        return {'http': config.PROXI, 'https': config.PROXI}
+    proxy = getattr(config, 'PROXI', None)
+    if proxy:
+        if proxy.startswith('socks5://'):
+            proxy = proxy.replace('socks5://', 'socks5h://')
+        return {'http': proxy, 'https': proxy}
     return None
 
 
